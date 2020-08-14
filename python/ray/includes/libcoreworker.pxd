@@ -5,6 +5,7 @@
 from libc.stdint cimport int64_t
 from libcpp cimport bool as c_bool
 from libcpp.memory cimport shared_ptr, unique_ptr
+from libcpp.pair cimport pair as c_pair
 from libcpp.string cimport string as c_string
 from libcpp.unordered_map cimport unordered_map
 from libcpp.utility cimport pair
@@ -17,11 +18,13 @@ from ray.includes.unique_ids cimport (
     CJobID,
     CTaskID,
     CObjectID,
+    CPlacementGroupID,
 )
 from ray.includes.common cimport (
     CAddress,
     CActorCreationOptions,
     CBuffer,
+    CPlacementGroupCreationOptions,
     CRayFunction,
     CRayObject,
     CRayStatus,
@@ -85,12 +88,16 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
             const CRayFunction &function,
             const c_vector[unique_ptr[CTaskArg]] &args,
             const CTaskOptions &options, c_vector[CObjectID] *return_ids,
-            int max_retries)
+            int max_retries,
+            c_pair[CPlacementGroupID, int64_t] placement_options)
         CRayStatus CreateActor(
             const CRayFunction &function,
             const c_vector[unique_ptr[CTaskArg]] &args,
             const CActorCreationOptions &options,
             const c_string &extension_data, CActorID *actor_id)
+        CRayStatus CreatePlacementGroup(
+            const CPlacementGroupCreationOptions &options,
+            CPlacementGroupID *placement_group_id)
         void SubmitActorTask(
             const CActorID &actor_id, const CRayFunction &function,
             const c_vector[unique_ptr[CTaskArg]] &args,
@@ -154,6 +161,7 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
         CRayStatus Create(const shared_ptr[CBuffer] &metadata,
                           const size_t data_size,
                           const CObjectID &object_id,
+                          const CAddress &owner_address,
                           shared_ptr[CBuffer] *data)
         CRayStatus Seal(const CObjectID &object_id, c_bool pin_object)
         CRayStatus Get(const c_vector[CObjectID] &ids, int64_t timeout_ms,
@@ -219,15 +227,20 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
         (c_bool() nogil) kill_main
         CCoreWorkerOptions()
         (void() nogil) terminate_asyncio_thread
+        int metrics_agent_port
+        c_string serialized_job_config
 
     cdef cppclass CCoreWorkerProcess "ray::CoreWorkerProcess":
         @staticmethod
         void Initialize(const CCoreWorkerOptions &options)
         # Only call this in CoreWorker.__cinit__,
         # use CoreWorker.core_worker to access C++ CoreWorker.
+
         @staticmethod
         CCoreWorker &GetCoreWorker()
+
         @staticmethod
         void Shutdown()
+
         @staticmethod
         void RunTaskExecutionLoop()

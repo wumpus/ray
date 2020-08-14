@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gcs_server.h"
+#include "ray/gcs/gcs_server/gcs_server.h"
 
-#include "error_info_handler_impl.h"
-#include "gcs_actor_manager.h"
-#include "gcs_job_manager.h"
-#include "gcs_node_manager.h"
-#include "gcs_object_manager.h"
-#include "gcs_placement_group_manager.h"
-#include "gcs_worker_manager.h"
 #include "ray/common/network_util.h"
 #include "ray/common/ray_config.h"
-#include "stats_handler_impl.h"
-#include "task_info_handler_impl.h"
+#include "ray/gcs/gcs_server/gcs_actor_manager.h"
+#include "ray/gcs/gcs_server/gcs_job_manager.h"
+#include "ray/gcs/gcs_server/gcs_node_manager.h"
+#include "ray/gcs/gcs_server/gcs_object_manager.h"
+#include "ray/gcs/gcs_server/gcs_placement_group_manager.h"
+#include "ray/gcs/gcs_server/gcs_worker_manager.h"
+#include "ray/gcs/gcs_server/stats_handler_impl.h"
+#include "ray/gcs/gcs_server/task_info_handler_impl.h"
 
 namespace ray {
 namespace gcs {
@@ -95,11 +94,6 @@ void GcsServer::Start() {
   stats_service_.reset(new rpc::StatsGrpcService(main_service_, *stats_handler_));
   rpc_server_.RegisterService(*stats_service_);
 
-  error_info_handler_ = InitErrorInfoHandler();
-  error_info_service_.reset(
-      new rpc::ErrorInfoGrpcService(main_service_, *error_info_handler_));
-  rpc_server_.RegisterService(*error_info_service_);
-
   gcs_worker_manager_ = InitGcsWorkerManager();
   worker_info_service_.reset(
       new rpc::WorkerInfoGrpcService(main_service_, *gcs_worker_manager_));
@@ -119,6 +113,11 @@ void GcsServer::Start() {
 
         // Store gcs rpc server address in redis.
         StoreGcsServerAddressInRedis();
+
+        // Only after the rpc_server_ is running can the node failure detector be run.
+        // Otherwise the node failure detector will mistake some living nodes as dead
+        // as the timer inside node failure detector is already run.
+        gcs_node_manager_->StartNodeFailureDetector();
         is_started_ = true;
       };
       gcs_actor_manager_->LoadInitialData(actor_manager_load_initial_data_callback);
@@ -133,6 +132,11 @@ void GcsServer::Stop() {
     RAY_LOG(INFO) << "Stopping GCS server.";
     // Shutdown the rpc server
     rpc_server_.Shutdown();
+
+    node_manager_io_service_.stop();
+    if (node_manager_io_service_thread_->joinable()) {
+      node_manager_io_service_thread_->join();
+    }
 
     is_stopped_ = true;
     RAY_LOG(INFO) << "GCS server stopped.";
@@ -149,8 +153,14 @@ void GcsServer::InitBackendClient() {
 
 void GcsServer::InitGcsNodeManager() {
   RAY_CHECK(redis_gcs_client_ != nullptr);
+
+  node_manager_io_service_thread_.reset(new std::thread([this] {
+    /// The asio work to keep node_manager_io_service_ alive.
+    boost::asio::io_service::work node_manager_io_service_work_(node_manager_io_service_);
+    node_manager_io_service_.run();
+  }));
   gcs_node_manager_ = std::make_shared<GcsNodeManager>(
-      main_service_, redis_gcs_client_->Errors(), gcs_pub_sub_, gcs_table_storage_);
+      main_service_, node_manager_io_service_, gcs_pub_sub_, gcs_table_storage_);
 }
 
 void GcsServer::InitGcsActorManager() {
@@ -187,7 +197,8 @@ void GcsServer::InitGcsActorManager() {
   gcs_node_manager_->AddNodeAddedListener(
       [this](const std::shared_ptr<rpc::GcsNodeInfo> &) {
         // Because a new node has been added, we need to try to schedule the pending
-        // actors.
+        // placement groups and the pending actors.
+        gcs_placement_group_manager_->SchedulePendingPlacementGroups();
         gcs_actor_manager_->SchedulePendingActors();
       });
 
@@ -260,11 +271,6 @@ std::unique_ptr<rpc::TaskInfoHandler> GcsServer::InitTaskInfoHandler() {
 std::unique_ptr<rpc::StatsHandler> GcsServer::InitStatsHandler() {
   return std::unique_ptr<rpc::DefaultStatsHandler>(
       new rpc::DefaultStatsHandler(gcs_table_storage_));
-}
-
-std::unique_ptr<rpc::ErrorInfoHandler> GcsServer::InitErrorInfoHandler() {
-  return std::unique_ptr<rpc::DefaultErrorInfoHandler>(
-      new rpc::DefaultErrorInfoHandler(*redis_gcs_client_));
 }
 
 std::unique_ptr<GcsWorkerManager> GcsServer::InitGcsWorkerManager() {

@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include "ray/protobuf/core_worker.grpc.pb.h"
-#include "ray/protobuf/core_worker.pb.h"
 #include "ray/rpc/grpc_server.h"
 #include "ray/rpc/server_call.h"
+#include "src/ray/protobuf/core_worker.grpc.pb.h"
+#include "src/ray/protobuf/core_worker.pb.h"
 
 namespace ray {
 
@@ -27,13 +27,15 @@ namespace rpc {
 
 /// NOTE: See src/ray/core_worker/core_worker.h on how to add a new grpc handler.
 #define RAY_CORE_WORKER_RPC_HANDLERS                                     \
-  RPC_SERVICE_HANDLER(CoreWorkerService, AssignTask)                     \
   RPC_SERVICE_HANDLER(CoreWorkerService, PushTask)                       \
   RPC_SERVICE_HANDLER(CoreWorkerService, DirectActorCallArgWaitComplete) \
   RPC_SERVICE_HANDLER(CoreWorkerService, GetObjectStatus)                \
   RPC_SERVICE_HANDLER(CoreWorkerService, WaitForActorOutOfScope)         \
   RPC_SERVICE_HANDLER(CoreWorkerService, WaitForObjectEviction)          \
   RPC_SERVICE_HANDLER(CoreWorkerService, WaitForRefRemoved)              \
+  RPC_SERVICE_HANDLER(CoreWorkerService, AddObjectLocationOwner)         \
+  RPC_SERVICE_HANDLER(CoreWorkerService, RemoveObjectLocationOwner)      \
+  RPC_SERVICE_HANDLER(CoreWorkerService, GetObjectLocationsOwner)        \
   RPC_SERVICE_HANDLER(CoreWorkerService, KillActor)                      \
   RPC_SERVICE_HANDLER(CoreWorkerService, CancelTask)                     \
   RPC_SERVICE_HANDLER(CoreWorkerService, RemoteCancelTask)               \
@@ -42,13 +44,15 @@ namespace rpc {
   RPC_SERVICE_HANDLER(CoreWorkerService, PlasmaObjectReady)
 
 #define RAY_CORE_WORKER_DECLARE_RPC_HANDLERS                              \
-  DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(AssignTask)                     \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(PushTask)                       \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(DirectActorCallArgWaitComplete) \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(GetObjectStatus)                \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(WaitForActorOutOfScope)         \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(WaitForObjectEviction)          \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(WaitForRefRemoved)              \
+  DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(AddObjectLocationOwner)         \
+  DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(RemoveObjectLocationOwner)      \
+  DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(GetObjectLocationsOwner)        \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(KillActor)                      \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(CancelTask)                     \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(RemoteCancelTask)               \
@@ -59,6 +63,7 @@ namespace rpc {
 /// Interface of the `CoreWorkerServiceHandler`, see `src/ray/protobuf/core_worker.proto`.
 class CoreWorkerServiceHandler {
  public:
+  virtual ~CoreWorkerServiceHandler() {}
   /// Handlers. For all of the following handlers, the implementations can
   /// handle the request asynchronously. When handling is done, the
   /// `send_reply_callback` should be called. See

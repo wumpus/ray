@@ -14,9 +14,8 @@
 
 #pragma once
 
-#include <ray/common/task/task_spec.h>
-
 #include "ray/common/id.h"
+#include "ray/common/task/task_spec.h"
 #include "ray/gcs/accessor.h"
 #include "ray/gcs/callback.h"
 #include "ray/gcs/subscription_executor.h"
@@ -52,6 +51,9 @@ class RedisLogBasedActorInfoAccessor : public ActorInfoAccessor {
     return Status::NotImplemented(
         "RedisLogBasedActorInfoAccessor does not support named detached actors.");
   }
+
+  Status AsyncRegisterActor(const TaskSpecification &task_spec,
+                            const StatusCallback &callback) override;
 
   Status AsyncCreateActor(const TaskSpecification &task_spec,
                           const StatusCallback &callback) override;
@@ -412,9 +414,6 @@ class RedisErrorInfoAccessor : public ErrorInfoAccessor {
 
   Status AsyncReportJobError(const std::shared_ptr<ErrorTableData> &data_ptr,
                              const StatusCallback &callback) override;
-
- private:
-  RedisGcsClient *client_impl_{nullptr};
 };
 
 /// \class RedisStatsInfoAccessor
@@ -469,6 +468,14 @@ class RedisWorkerInfoAccessor : public WorkerInfoAccessor {
   typedef SubscriptionExecutor<WorkerID, WorkerTableData, WorkerTable>
       WorkerFailureSubscriptionExecutor;
   WorkerFailureSubscriptionExecutor worker_failure_sub_executor_;
+};
+
+class RedisPlacementGroupInfoAccessor : public PlacementGroupInfoAccessor {
+ public:
+  virtual ~RedisPlacementGroupInfoAccessor() = default;
+
+  Status AsyncCreatePlacementGroup(
+      const PlacementGroupSpecification &placement_group_spec) override;
 };
 
 }  // namespace gcs
